@@ -285,7 +285,16 @@ impl Pff {
         // by default for PSTs) is a fixed byte substitution over the payload:
         // no key material, no length change. Decrypting here keeps the zlib
         // sniff below applicable to the plaintext bytes.
-        let raw: std::borrow::Cow<'_, [u8]> = if self.crypt == 1 {
+        // Only leaf payloads carry the substitution. Measured on a v23 PST:
+        // the SLBLOCK at bid 0xD0097A still began with its btype byte 0x02 in
+        // clear, while the leaf heap of the same folder decrypted to a valid
+        // HNHDR (bSig 0xEC, bClientSig 0x7C). Decrypting an internal block that
+        // already starts with a block type would turn 0x02 into 0xB4 and stop
+        // the subnode tree dead.
+        let looks_like_block = matches!(raw.first(), Some(0x01) | Some(0x02));
+        let raw: std::borrow::Cow<'_, [u8]> = if self.crypt == 1
+            && (!bid_is_internal(bid) || !looks_like_block)
+        {
             std::borrow::Cow::Owned(raw.iter().map(|b| PERMUTE[*b as usize]).collect())
         } else {
             std::borrow::Cow::Borrowed(raw)

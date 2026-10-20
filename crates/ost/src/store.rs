@@ -159,9 +159,42 @@ impl Store {
             let hier = make_nid(nid_index(parent), NID_TYPE_HIERARCHY_TABLE);
             // Search folders and other non-folder nodes own no hierarchy table;
             // a missing one is normal, not an error.
-            let Ok(tc) = Tc::open(&self.pff, hier) else {
-                continue;
+            let tc = match Tc::open(&self.pff, hier) {
+                Ok(tc) => tc,
+                Err(e) => {
+                    let node = self
+                        .pff
+                        .node(hier)
+                        .map(|n| {
+                            let subs = self
+                                .pff
+                                .subnodes(n.bid_sub)
+                                .map(|s| s.len().to_string())
+                                .unwrap_or_else(|e| format!("err: {e}"));
+                            let head = self
+                                .pff
+                                .data_blocks(n.bid_data)
+                                .ok()
+                                .and_then(|b| b.first().cloned())
+                                .map(|b| {
+                                    b.iter()
+                                        .take(24)
+                                        .map(|x| format!("{x:02X}"))
+                                        .collect::<Vec<_>>()
+                                        .join(" ")
+                                })
+                                .unwrap_or_else(|| "<no data blocks>".to_string());
+                            format!(
+                                "bid_data=0x{:X} bid_sub=0x{:X} subs={} head={}",
+                                n.bid_data, n.bid_sub, subs, head
+                            )
+                        })
+                        .unwrap_or_else(|e| format!("node err: {e}"));
+                    eprintln!("DBG hier=0x{hier:X} parent=0x{parent:X} {node} => {e}");
+                    continue;
+                }
             };
+            eprintln!("DBG hier=0x{hier:X} parent=0x{parent:X} rows={}", tc.rows.len());
             for row in &tc.rows {
                 let nid = Tc::row_id(row);
                 if nid == 0 || !seen.insert(nid) {
@@ -183,6 +216,7 @@ impl Store {
                 }
             }
         }
+        eprintln!("DBG folders total={}", out.len());
         Ok(out)
     }
 

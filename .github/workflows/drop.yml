@@ -1,11 +1,12 @@
 name: drop
 
-# The release asset is not downloadable from this machine (the CDN resets the
-# signed URL), so this republishes it as base64 chunks on a throwaway branch,
-# which raw.githubusercontent.com serves fine.
-
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag whose windows zip to republish as base64 chunks
+        required: true
+        default: v0.1.1-permute
 
 permissions:
   contents: write
@@ -22,8 +23,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          rm -rf drop
           mkdir -p drop
-          gh release download v0.1.1-permute -R "${{ github.repository }}" \
+          gh release download "${{ github.event.inputs.tag }}" -R "${{ github.repository }}" \
             -p 'ost-mcp-x86_64-pc-windows-msvc.zip*' -D drop
           ls -l drop
 
@@ -32,14 +34,14 @@ jobs:
           sha256sum drop/ost-mcp-x86_64-pc-windows-msvc.zip | cut -d' ' -f1 > drop/sha256.txt
           base64 -w 0 drop/ost-mcp-x86_64-pc-windows-msvc.zip > drop/all.b64
           split -b 4000000 -d drop/all.b64 drop/chunk-
-          rm drop/all.b64 drop/ost-mcp-x86_64-pc-windows-msvc.zip drop/ost-mcp-x86_64-pc-windows-msvc.zip.sha256
+          rm -f drop/all.b64 drop/*.zip drop/ost-mcp-x86_64-pc-windows-msvc.zip.sha256
           ls -l drop
 
       - name: Push to a throwaway branch
         run: |
           git config user.name 'ost-mcp drop'
           git config user.email 'noreply@example.com'
-          git checkout -b binary-drop
+          git checkout -B binary-drop
           git add -f drop
-          git commit -m 'binary drop: windows release asset as base64 chunks'
+          git commit -m "binary drop: ${{ github.event.inputs.tag }}"
           git push -f origin binary-drop
